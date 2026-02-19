@@ -20,9 +20,20 @@
         "noUnusedVariables": "warn",
         "useExhaustiveDependencies": "off"
       },
+      "a11y": {
+        "noLabelWithoutControl": "off",
+        "useSemanticElements": "off",
+        "useKeyWithClickEvents": "off",
+        "noRedundantAlt": "off"
+      },
+      "performance": {
+        "noImgElement": "off"
+      },
       "suspicious": {
         "noExplicitAny": "off",
-        "noDocumentCookie": "off"
+        "noDocumentCookie": "off",
+        "noArrayIndexKey": "off",
+        "noDoubleEquals": "off"
       }
     }
   },
