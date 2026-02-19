@@ -46,20 +46,6 @@ const CORE_MD_FILES = [
   "BOOTSTRAP.md",
 ];
 
-function runJsonHost<T>(cwd: string, args: string[]): T | null {
-  try {
-    const output = execFileSync("openclaw", args, {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 10_000,
-    });
-    return JSON.parse(output) as T;
-  } catch {
-    return null;
-  }
-}
-
 function discoverBots(): BotSource[] {
   const map = new Map<string, BotSource>();
 
@@ -154,7 +140,6 @@ function resolveStateDir(bot: BotSource): string | null {
   const direct = join(bot.path, `.openclaw-${bot.id}`);
   if (existsSync(direct)) return direct;
 
-  // baus legacy layout
   const legacy = join(bot.path, ".openclaw-baus");
   if (existsSync(legacy)) return legacy;
 
@@ -190,7 +175,24 @@ function getRunningDockerGateways(): Set<string> {
   }
 }
 
-function collectAgent(bot: BotSource, runningGateways: Set<string>): AgentCardData {
+function isHostGatewayUp(): boolean {
+  try {
+    const out = execFileSync("bash", ["-lc", "ss -ltn '( sport = :19000 )' | tail -n +2"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 3_000,
+    });
+    return out.includes("LISTEN");
+  } catch {
+    return false;
+  }
+}
+
+function collectAgent(
+  bot: BotSource,
+  runningGateways: Set<string>,
+  hostGatewayOnline: boolean,
+): AgentCardData {
   const stateDir = resolveStateDir(bot);
 
   if (bot.runtime === "docker") {
@@ -216,21 +218,18 @@ function collectAgent(bot: BotSource, runningGateways: Set<string>): AgentCardDa
     };
   }
 
-  const status = runJsonHost<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
-    bot.path,
-    ["status", "--json"],
-  );
-
   const cronJobs = stateDir ? readCronJobsFromStateDir(stateDir) : [];
-  const sessions = runJsonHost<{ path?: string }>(bot.path, ["sessions", "--json"]);
-  const latest = sessions?.path ? getLatestSessionEntry(sessions.path) : null;
+  const sessionStorePath = stateDir
+    ? join(stateDir, "agents", "main", "sessions", "sessions.json")
+    : null;
+  const latest = sessionStorePath ? getLatestSessionEntry(sessionStorePath) : null;
 
   return {
     id: bot.id,
     name: bot.name,
     path: bot.path,
-    status: status?.gateway?.reachable ? "online" : "offline",
-    gatewayLatencyMs: status?.gateway?.connectLatencyMs ?? null,
+    status: hostGatewayOnline ? "online" : "offline",
+    gatewayLatencyMs: null,
     cronJobs,
     lastInboundAt: latest?.updatedAt ?? null,
     lastInboundText: latest?.sessionFile
@@ -242,7 +241,7 @@ function collectAgent(bot: BotSource, runningGateways: Set<string>): AgentCardDa
 
 export const getBotsNav = unstable_cache(
   async (): Promise<BotNavItem[]> => discoverBots().map((bot) => ({ id: bot.id, name: bot.name })),
-  ["bots-nav-v3"],
+  ["bots-nav-v5"],
   { revalidate: 60 },
 );
 
@@ -250,9 +249,10 @@ export const getAgentsData = unstable_cache(
   async (): Promise<AgentCardData[]> => {
     const bots = discoverBots();
     const runningGateways = getRunningDockerGateways();
-    return bots.map((bot) => collectAgent(bot, runningGateways));
+    const hostGatewayOnline = isHostGatewayUp();
+    return bots.map((bot) => collectAgent(bot, runningGateways, hostGatewayOnline));
   },
-  ["agents-data-v3"],
+  ["agents-data-v5"],
   { revalidate: 60 },
 );
 
