@@ -32,6 +32,8 @@ type BotSource = {
   id: string;
   name: string;
   path: string;
+  runtime: "host" | "docker";
+  containerName?: string;
 };
 
 const BOT_ROOTS = ["/root/bots", "/home/openclaw/bots"];
@@ -44,7 +46,7 @@ const CORE_MD_FILES = [
   "BOOTSTRAP.md",
 ];
 
-function runJson<T>(cwd: string, args: string[]): T | null {
+function runJsonHost<T>(cwd: string, args: string[]): T | null {
   try {
     const output = execFileSync("openclaw", args, {
       cwd,
@@ -56,6 +58,27 @@ function runJson<T>(cwd: string, args: string[]): T | null {
   } catch {
     return null;
   }
+}
+
+function runJsonDocker<T>(containerName: string, args: string[]): T | null {
+  try {
+    const cmd = `cd /home/openclaw && openclaw ${args.join(" ")}`;
+    const output = execFileSync("docker", ["exec", containerName, "sh", "-lc", cmd], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+    return JSON.parse(output) as T;
+  } catch {
+    return null;
+  }
+}
+
+function runJsonForBot<T>(bot: BotSource, args: string[]): T | null {
+  if (bot.runtime === "docker" && bot.containerName) {
+    return runJsonDocker<T>(bot.containerName, args);
+  }
+  return runJsonHost<T>(bot.path, args);
 }
 
 function discoverBots(): BotSource[] {
@@ -71,10 +94,13 @@ function discoverBots(): BotSource[] {
       if (entry === "tmp") continue;
 
       if (!map.has(entry)) {
+        const runtime = root === "/home/openclaw/bots" ? "docker" : "host";
         map.set(entry, {
           id: entry,
           name: entry,
           path: fullPath,
+          runtime,
+          containerName: runtime === "docker" ? `openclaw-${entry}-gateway` : undefined,
         });
       }
     }
@@ -145,15 +171,22 @@ function getLatestSessionEntry(
   }
 }
 
+function toHostPath(bot: BotSource, containerPath: string): string {
+  if (bot.runtime !== "docker") return containerPath;
+  if (!containerPath.startsWith("/home/openclaw/")) return containerPath;
+  return containerPath.replace("/home/openclaw/", `${bot.path}/`);
+}
+
 function collectAgent(bot: BotSource): AgentCardData {
-  const status = runJson<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
-    bot.path,
+  const status = runJsonForBot<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
+    bot,
     ["status", "--json"],
   );
-  const cron = runJson<{ jobs?: CronJob[] }>(bot.path, ["cron", "list", "--json"]);
-  const sessions = runJson<{ path?: string }>(bot.path, ["sessions", "--json"]);
+  const cron = runJsonForBot<{ jobs?: CronJob[] }>(bot, ["cron", "list", "--json"]);
+  const sessions = runJsonForBot<{ path?: string }>(bot, ["sessions", "--json"]);
 
-  const latest = sessions?.path ? getLatestSessionEntry(sessions.path) : null;
+  const hostSessionPath = sessions?.path ? toHostPath(bot, sessions.path) : null;
+  const latest = hostSessionPath ? getLatestSessionEntry(hostSessionPath) : null;
 
   return {
     id: bot.id,
@@ -164,7 +197,7 @@ function collectAgent(bot: BotSource): AgentCardData {
     cronJobs: cron?.jobs ?? [],
     lastInboundAt: latest?.updatedAt ?? null,
     lastInboundText: latest?.sessionFile
-      ? readLastUserMessage(latest.sessionFile)
+      ? readLastUserMessage(toHostPath(bot, latest.sessionFile))
       : "No inbound message found",
     mdFiles: readCoreFiles(bot.path),
   };

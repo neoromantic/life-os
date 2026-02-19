@@ -52,6 +52,7 @@ Data is read directly from server runtime, as requested:
 - status: `openclaw status --json`
 - cron: `openclaw cron list --json`
 - sessions: `openclaw sessions --json`
+- docker-hosted bots are queried from their own gateway containers via `docker exec openclaw-<bot>-gateway ...`
 - message transcript: session `.jsonl` files
 - core docs: `<bot>/[core].md`
 
