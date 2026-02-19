@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Search, SquarePen } from "lucide-react";
+import { Bot, LayoutDashboard, Search, SquarePen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import {
 import type { BotNavItem } from "@/lib/server/agents";
 
 type WorkspaceShellProps = {
-  active: "posts" | "agents";
+  active: "dashboard" | "posts" | "agents";
   activeBotId?: string;
   bots?: BotNavItem[];
   title: string;
@@ -48,7 +48,11 @@ export function WorkspaceShell({
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" isActive>
+              <SidebarMenuButton
+                render={<a href="/dashboard" />}
+                size="lg"
+                isActive={active === "dashboard"}
+              >
                 <div className="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                   <SquarePen className="size-4" />
                 </div>
@@ -68,7 +72,17 @@ export function WorkspaceShell({
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    render={<a href="/" />}
+                    render={<a href="/dashboard" />}
+                    isActive={active === "dashboard"}
+                    tooltip="Dashboard"
+                  >
+                    <LayoutDashboard />
+                    <span>Dashboard</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    render={<a href="/posts" />}
                     isActive={active === "posts"}
                     tooltip="Posts"
                   >

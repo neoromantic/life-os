@@ -1,7 +1,5 @@
-import { AppShell } from "@/components/app-shell";
-import { getBotsNav } from "@/lib/server/agents";
+import { redirect } from "next/navigation";
 
-export default async function Page() {
-  const bots = await getBotsNav();
-  return <AppShell bots={bots} />;
+export default function HomePage() {
+  redirect("/dashboard");
 }

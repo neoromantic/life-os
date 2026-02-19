@@ -26,10 +26,17 @@ App is expected to be available via:
 
 ## Product scope (current)
 
-### 1) Posts (placeholder)
+### 1) Dashboard
+- `/dashboard` is the new landing page.
+- Clicking the LifeOS logo in sidebar header opens `/dashboard`.
+- Shows wake-up baseline to +24h timeline with planned bot actions.
+- First version uses 15-minute slots, collapsed into hourly cells for readability.
+- Initial tracked bots: `baus`, `kevin`, `yoda`, `collecio`.
+
+### 2) Posts (placeholder)
 A lightweight layout to shape future scheduling UX.
 
-### 2) Agents (active build)
+### 3) Agents (active build)
 - `/agents` shows all bots as compact cards (grid).
 - Each card links to a dedicated page: `/agents/:id`.
 - Sidebar has Agents submenu with all discovered bots.
