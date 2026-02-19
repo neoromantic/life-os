@@ -12,6 +12,7 @@ type CronJob = {
 };
 
 export type AgentCardData = {
+  id: string;
   name: string;
   path: string;
   status: "online" | "offline";
@@ -22,7 +23,18 @@ export type AgentCardData = {
   mdFiles: Array<{ name: string; path: string; content: string }>;
 };
 
-const BOTS_ROOT = "/root/bots";
+export type BotNavItem = {
+  id: string;
+  name: string;
+};
+
+type BotSource = {
+  id: string;
+  name: string;
+  path: string;
+};
+
+const BOT_ROOTS = ["/root/bots", "/home/openclaw/bots"];
 const CORE_MD_FILES = [
   "AGENTS.md",
   "SOUL.md",
@@ -46,6 +58,31 @@ function runJson<T>(cwd: string, args: string[]): T | null {
   }
 }
 
+function discoverBots(): BotSource[] {
+  const map = new Map<string, BotSource>();
+
+  for (const root of BOT_ROOTS) {
+    if (!existsSync(root)) continue;
+    const entries = readdirSync(root);
+    for (const entry of entries) {
+      const fullPath = join(root, entry);
+      if (!statSync(fullPath).isDirectory()) continue;
+      if (entry.includes(".")) continue;
+      if (entry === "tmp") continue;
+
+      if (!map.has(entry)) {
+        map.set(entry, {
+          id: entry,
+          name: entry,
+          path: fullPath,
+        });
+      }
+    }
+  }
+
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function readLastUserMessage(sessionFile: string): string {
   if (!existsSync(sessionFile)) return "No inbound message found";
 
@@ -62,7 +99,9 @@ function readLastUserMessage(sessionFile: string): string {
       const cleaned =
         text.split("Conversation info (untrusted metadata):")[0]?.trim() ?? text.trim();
       return cleaned.slice(0, 220) || "(empty user message)";
-    } catch {}
+    } catch {
+      // ignore bad jsonl row
+    }
   }
 
   return "No inbound message found";
@@ -93,7 +132,8 @@ function getLatestSessionEntry(
 
     let latest: { updatedAt: number; sessionFile: string } | null = null;
     for (const [key, value] of Object.entries(store)) {
-      if (!key.includes(":telegram:") || key.includes(":cron:")) continue;
+      if (!key.includes(":telegram:")) continue;
+      if (key.includes(":cron:")) continue;
       if (!value.updatedAt || !value.sessionFile) continue;
       if (!latest || value.updatedAt > latest.updatedAt) {
         latest = { updatedAt: value.updatedAt, sessionFile: value.sessionFile };
@@ -105,20 +145,20 @@ function getLatestSessionEntry(
   }
 }
 
-function collectAgent(botName: string): AgentCardData {
-  const botPath = join(BOTS_ROOT, botName);
+function collectAgent(bot: BotSource): AgentCardData {
   const status = runJson<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
-    botPath,
+    bot.path,
     ["status", "--json"],
   );
-  const cron = runJson<{ jobs?: CronJob[] }>(botPath, ["cron", "list", "--json"]);
-  const sessions = runJson<{ path?: string }>(botPath, ["sessions", "--json"]);
+  const cron = runJson<{ jobs?: CronJob[] }>(bot.path, ["cron", "list", "--json"]);
+  const sessions = runJson<{ path?: string }>(bot.path, ["sessions", "--json"]);
 
   const latest = sessions?.path ? getLatestSessionEntry(sessions.path) : null;
 
   return {
-    name: botName,
-    path: botPath,
+    id: bot.id,
+    name: bot.name,
+    path: bot.path,
     status: status?.gateway?.reachable ? "online" : "offline",
     gatewayLatencyMs: status?.gateway?.connectLatencyMs ?? null,
     cronJobs: cron?.jobs ?? [],
@@ -126,19 +166,23 @@ function collectAgent(botName: string): AgentCardData {
     lastInboundText: latest?.sessionFile
       ? readLastUserMessage(latest.sessionFile)
       : "No inbound message found",
-    mdFiles: readCoreFiles(botPath),
+    mdFiles: readCoreFiles(bot.path),
   };
 }
 
-export const getAgentsData = unstable_cache(
-  async (): Promise<AgentCardData[]> => {
-    const bots = readdirSync(BOTS_ROOT).filter((name) => {
-      const fullPath = join(BOTS_ROOT, name);
-      return statSync(fullPath).isDirectory();
-    });
-
-    return bots.map(collectAgent).sort((a, b) => a.name.localeCompare(b.name));
-  },
-  ["agents-data-v1"],
+export const getBotsNav = unstable_cache(
+  async (): Promise<BotNavItem[]> => discoverBots().map((bot) => ({ id: bot.id, name: bot.name })),
+  ["bots-nav-v2"],
   { revalidate: 20 },
 );
+
+export const getAgentsData = unstable_cache(
+  async (): Promise<AgentCardData[]> => discoverBots().map(collectAgent),
+  ["agents-data-v2"],
+  { revalidate: 20 },
+);
+
+export async function getAgentById(id: string): Promise<AgentCardData | null> {
+  const all = await getAgentsData();
+  return all.find((agent) => agent.id === id) ?? null;
+}

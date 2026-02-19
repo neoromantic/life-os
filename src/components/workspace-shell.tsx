@@ -1,7 +1,6 @@
 "use client";
 
 import { Bot, Search, SquarePen } from "lucide-react";
-import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,13 +14,19 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import type { BotNavItem } from "@/lib/server/agents";
 
 type WorkspaceShellProps = {
   active: "posts" | "agents";
+  activeBotId?: string;
+  bots?: BotNavItem[];
   title: string;
   description?: string;
   actions?: React.ReactNode;
@@ -30,6 +35,8 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({
   active,
+  activeBotId,
+  bots = [],
   title,
   description,
   actions,
@@ -61,7 +68,7 @@ export function WorkspaceShell({
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    render={<Link href="/" />}
+                    render={<a href="/" />}
                     isActive={active === "posts"}
                     tooltip="Posts"
                   >
@@ -71,13 +78,27 @@ export function WorkspaceShell({
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    render={<Link href="/agents" />}
+                    render={<a href="/agents" />}
                     isActive={active === "agents"}
                     tooltip="Agents"
                   >
                     <Bot />
                     <span>Agents</span>
                   </SidebarMenuButton>
+                  {bots.length > 0 ? (
+                    <SidebarMenuSub>
+                      {bots.map((bot) => (
+                        <SidebarMenuSubItem key={bot.id}>
+                          <SidebarMenuSubButton
+                            render={<a href={`/agents/${bot.id}`} />}
+                            isActive={activeBotId === bot.id}
+                          >
+                            <span>{bot.name}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  ) : null}
                 </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>

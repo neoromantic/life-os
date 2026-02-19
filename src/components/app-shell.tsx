@@ -1,9 +1,9 @@
 "use client";
 
 import { Calendar, SquarePen } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import type { BotNavItem } from "@/lib/server/agents";
 
 const drafts = [
   "Automating effortless backlinks with OpenClaw",
@@ -12,10 +12,15 @@ const drafts = [
   "Tailscale is amazing",
 ];
 
-export function AppShell() {
+type AppShellProps = {
+  bots: BotNavItem[];
+};
+
+export function AppShell({ bots }: AppShellProps) {
   return (
     <WorkspaceShell
       active="posts"
+      bots={bots}
       title="Posts"
       description="Manage and schedule social media posts"
       actions={

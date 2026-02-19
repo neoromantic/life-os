@@ -30,14 +30,13 @@ App is expected to be available via:
 A lightweight layout to shape future scheduling UX.
 
 ### 2) Agents (active build)
-Grid UI where each bot is shown as a compact card ("football-card" style), with details opened on click.
+- `/agents` shows all bots as compact cards (grid).
+- Each card links to a dedicated page: `/agents/:id`.
+- Sidebar has Agents submenu with all discovered bots.
 
-Per agent, we show:
-- status (online/offline)
-- gateway latency
-- latest inbound message (best-effort extraction from session jsonl)
-- cron jobs + schedule/next run/last status
-- core markdown files (when present):
+Per agent page:
+- **Overview tab**: status + latest inbound + cron schedules
+- **Markdown tab**: core `.md` files
   - `AGENTS.md`
   - `SOUL.md`
   - `USER.md`
@@ -49,7 +48,7 @@ Per agent, we show:
 
 Data is read directly from server runtime, as requested:
 
-- bots list: `/root/bots/*`
+- bots list: `/root/bots/*` + `/home/openclaw/bots/*`
 - status: `openclaw status --json`
 - cron: `openclaw cron list --json`
 - sessions: `openclaw sessions --json`

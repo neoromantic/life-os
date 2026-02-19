@@ -24,7 +24,8 @@
         "noLabelWithoutControl": "off",
         "useSemanticElements": "off",
         "useKeyWithClickEvents": "off",
-        "noRedundantAlt": "off"
+        "noRedundantAlt": "off",
+        "useAnchorContent": "off"
       },
       "performance": {
         "noImgElement": "off"
