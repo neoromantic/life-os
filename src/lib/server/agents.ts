@@ -52,33 +52,12 @@ function runJsonHost<T>(cwd: string, args: string[]): T | null {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: 30_000,
+      timeout: 10_000,
     });
     return JSON.parse(output) as T;
   } catch {
     return null;
   }
-}
-
-function runJsonDocker<T>(containerName: string, args: string[]): T | null {
-  try {
-    const cmd = `cd /home/openclaw && openclaw ${args.join(" ")}`;
-    const output = execFileSync("docker", ["exec", containerName, "sh", "-lc", cmd], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 30_000,
-    });
-    return JSON.parse(output) as T;
-  } catch {
-    return null;
-  }
-}
-
-function runJsonForBot<T>(bot: BotSource, args: string[]): T | null {
-  if (bot.runtime === "docker" && bot.containerName) {
-    return runJsonDocker<T>(bot.containerName, args);
-  }
-  return runJsonHost<T>(bot.path, args);
 }
 
 function discoverBots(): BotSource[] {
@@ -126,7 +105,7 @@ function readLastUserMessage(sessionFile: string): string {
         text.split("Conversation info (untrusted metadata):")[0]?.trim() ?? text.trim();
       return cleaned.slice(0, 220) || "(empty user message)";
     } catch {
-      // ignore bad jsonl row
+      // ignore malformed lines
     }
   }
 
@@ -171,22 +150,80 @@ function getLatestSessionEntry(
   }
 }
 
-function toHostPath(bot: BotSource, containerPath: string): string {
-  if (bot.runtime !== "docker") return containerPath;
-  if (!containerPath.startsWith("/home/openclaw/")) return containerPath;
-  return containerPath.replace("/home/openclaw/", `${bot.path}/`);
+function resolveStateDir(bot: BotSource): string | null {
+  const direct = join(bot.path, `.openclaw-${bot.id}`);
+  if (existsSync(direct)) return direct;
+
+  // baus legacy layout
+  const legacy = join(bot.path, ".openclaw-baus");
+  if (existsSync(legacy)) return legacy;
+
+  return null;
 }
 
-function collectAgent(bot: BotSource): AgentCardData {
-  const status = runJsonForBot<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
-    bot,
+function readCronJobsFromStateDir(stateDir: string): CronJob[] {
+  const jobsPath = join(stateDir, "cron", "jobs.json");
+  if (!existsSync(jobsPath)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(jobsPath, "utf8")) as { jobs?: CronJob[] };
+    return parsed.jobs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function getRunningDockerGateways(): Set<string> {
+  try {
+    const out = execFileSync("docker", ["ps", "--format", "{{.Names}}"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5_000,
+    });
+    return new Set(
+      out
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function collectAgent(bot: BotSource, runningGateways: Set<string>): AgentCardData {
+  const stateDir = resolveStateDir(bot);
+
+  if (bot.runtime === "docker") {
+    const online = bot.containerName ? runningGateways.has(bot.containerName) : false;
+    const cronJobs = stateDir ? readCronJobsFromStateDir(stateDir) : [];
+    const sessionStorePath = stateDir
+      ? join(stateDir, "agents", "main", "sessions", "sessions.json")
+      : null;
+    const latest = sessionStorePath ? getLatestSessionEntry(sessionStorePath) : null;
+
+    return {
+      id: bot.id,
+      name: bot.name,
+      path: bot.path,
+      status: online ? "online" : "offline",
+      gatewayLatencyMs: null,
+      cronJobs,
+      lastInboundAt: latest?.updatedAt ?? null,
+      lastInboundText: latest?.sessionFile
+        ? readLastUserMessage(latest.sessionFile)
+        : "No inbound message found",
+      mdFiles: readCoreFiles(bot.path),
+    };
+  }
+
+  const status = runJsonHost<{ gateway?: { reachable?: boolean; connectLatencyMs?: number } }>(
+    bot.path,
     ["status", "--json"],
   );
-  const cron = runJsonForBot<{ jobs?: CronJob[] }>(bot, ["cron", "list", "--json"]);
-  const sessions = runJsonForBot<{ path?: string }>(bot, ["sessions", "--json"]);
 
-  const hostSessionPath = sessions?.path ? toHostPath(bot, sessions.path) : null;
-  const latest = hostSessionPath ? getLatestSessionEntry(hostSessionPath) : null;
+  const cronJobs = stateDir ? readCronJobsFromStateDir(stateDir) : [];
+  const sessions = runJsonHost<{ path?: string }>(bot.path, ["sessions", "--json"]);
+  const latest = sessions?.path ? getLatestSessionEntry(sessions.path) : null;
 
   return {
     id: bot.id,
@@ -194,10 +231,10 @@ function collectAgent(bot: BotSource): AgentCardData {
     path: bot.path,
     status: status?.gateway?.reachable ? "online" : "offline",
     gatewayLatencyMs: status?.gateway?.connectLatencyMs ?? null,
-    cronJobs: cron?.jobs ?? [],
+    cronJobs,
     lastInboundAt: latest?.updatedAt ?? null,
     lastInboundText: latest?.sessionFile
-      ? readLastUserMessage(toHostPath(bot, latest.sessionFile))
+      ? readLastUserMessage(latest.sessionFile)
       : "No inbound message found",
     mdFiles: readCoreFiles(bot.path),
   };
@@ -205,14 +242,18 @@ function collectAgent(bot: BotSource): AgentCardData {
 
 export const getBotsNav = unstable_cache(
   async (): Promise<BotNavItem[]> => discoverBots().map((bot) => ({ id: bot.id, name: bot.name })),
-  ["bots-nav-v2"],
-  { revalidate: 20 },
+  ["bots-nav-v3"],
+  { revalidate: 60 },
 );
 
 export const getAgentsData = unstable_cache(
-  async (): Promise<AgentCardData[]> => discoverBots().map(collectAgent),
-  ["agents-data-v2"],
-  { revalidate: 20 },
+  async (): Promise<AgentCardData[]> => {
+    const bots = discoverBots();
+    const runningGateways = getRunningDockerGateways();
+    return bots.map((bot) => collectAgent(bot, runningGateways));
+  },
+  ["agents-data-v3"],
+  { revalidate: 60 },
 );
 
 export async function getAgentById(id: string): Promise<AgentCardData | null> {

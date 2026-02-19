@@ -58,7 +58,11 @@ Data is read directly from server runtime, as requested:
 
 ## Caching
 
-Agents data is cached server-side with Next.js cache (`unstable_cache`) and revalidated every ~20s to avoid hammering CLI on each request.
+Agents data is cached server-side with Next.js cache (`unstable_cache`) and revalidated every ~60s.
+
+Performance note:
+- docker bots are now read mostly from local state files (`.openclaw-*/cron/jobs.json`, `sessions/sessions.json`) + one `docker ps` pass for liveness,
+- so page load no longer runs multiple slow `openclaw` calls per docker bot.
 
 ## UI principles for this repo
 
